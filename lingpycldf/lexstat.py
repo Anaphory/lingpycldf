@@ -2,16 +2,14 @@
 
 """Analyze pycldf word list using lingpy"""
 
-import tempfile
-
 import argparse
 
 import pycldf
-from lingpy.compare.lexstat import LexStat
 from pycldf.util import Path
 from pycldf.dataset import Dataset
 from pycldf.cli import _get_dataset
-from clldutils.clilib import ParserError
+from lingpy.align.sca import Alignments
+from lingpy.compare.lexstat import LexStat
 
 
 def get_dataset(fname):
@@ -123,6 +121,7 @@ def cognatetable_from_lingpy(lingpy, column="cogid"):
             "ID": r,
             "Form_ID": row["reference"],
             "Cognateset_ID": row[column],
+            "Alignment": row["alignment"],
             "Source": ["LexStat"]})
     return cognates
 
@@ -144,6 +143,7 @@ if __name__ == '__main__':
         help="The method used to identify clusters")
     args = parser.parse_args()
 
+    # Load the word list into a LingPy compatible format
     if args.wordlist is None:
         try:
             wordlist = get_dataset("Wordlist-metadata.json")
@@ -151,15 +151,17 @@ if __name__ == '__main__':
             wordlist = get_dataset("forms.csv")
     else:
         wordlist = args.wordlist
-
     lpwl = to_lingpy(wordlist)
 
+    # Use LingPy functionality
     lexstat = LexStat(lpwl)
     if args.method != 'sca':
         lexstat.get_scorer(preprocessing=False, runs=10000, ratio=(2,1), vscale=1.0)
     lexstat.cluster(method=args.method, cluster_method=args.cluster_method, ref="cogid")
-    # lexstat.cluster(method="sca", cluster_method="upgma")
+    lexstat = Alignments(lexstat)
+    lexstat.align(model="sca")
 
+    # Create new CognateTable and write it to there
     wordlist.add_component("CognateTable")
     cognate_table = wordlist["CognateTable"]
     cognate_table.write(cognatetable_from_lingpy(lexstat))
