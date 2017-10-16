@@ -72,15 +72,15 @@ def to_lingpy(wordlist, replace_tab=" ", replace_newline=" "):
     tempfile.NamedTemporaryFile
         A named temporary file containing the LingPy-formatted wordlist
     """
-    lpwl = tempfile.NamedTemporaryFile()
+    lpwl = {}
 
     def lingpy_write(entries):
-        lpwl.write(b"\t".join([
-            str(entry).replace("\t", replace_tab
-            ).replace("\n", replace_newline
-            ).encode('utf-8')
-            for entry in entries]))
-        lpwl.write(b"\n")
+        lpwl[len(lpwl)] = [
+            entry.replace("\t", replace_tab
+            ).replace("\n", replace_newline)
+            if type(entry) == str
+            else entry
+            for entry in entries]
 
     lingpy_write(["ID", "REFERENCE", "DOCULECT", "CONCEPT", "TOKENS"])
     reference = wordlist[("FormTable", "id")].name
@@ -153,10 +153,8 @@ if __name__ == '__main__':
         wordlist = args.wordlist
 
     lpwl = to_lingpy(wordlist)
-    lpwl.seek(0, 0)
 
-    lexstat = LexStat(lpwl.name)
-    lpwl.close()
+    lexstat = LexStat(lpwl)
     if args.method != 'sca':
         lexstat.get_scorer(preprocessing=False, runs=10000, ratio=(2,1), vscale=1.0)
     lexstat.cluster(method=args.method, cluster_method=args.cluster_method, ref="cogid")
