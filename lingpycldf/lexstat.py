@@ -13,74 +13,156 @@ from pycldf.dataset import Dataset
 from pycldf.cli import _get_dataset
 from clldutils.clilib import ParserError
 
-import column_names
-
 
 def get_dataset(fname):
+    """Load a CLDF dataset.
+
+    Load the file as `json` CLDF metadata description file, or as metadata-free
+    dataset contained in a single csv file.
+
+    The distinction is made depending on the file extension: `.json` files are
+    loaded as metadata descriptions, all other files are matched against the
+    CLDF module specifications. Directories are checked for the presence of
+    any CLDF datasets in undefined order of the dataset types.
+
+    Parameters
+    ----------
+    fname : str or Path
+        Path to a CLDF dataset
+
+    Returns
+    -------
+    Dataset
+    """
     fname = Path(fname)
-    if not fname.exists() or not fname.is_file():
-        raise ParserError(
-            '{:} is not an existing directory'.format(
-                fname))
+    if not fname.exists():
+        raise FileNotFoundError(
+            '{:} does not exist'.format(fname))
     if fname.suffix == '.json':
         return Dataset.from_metadata(fname)
     return Dataset.from_data(fname)
 
 
-def lingpy_write(entries):
-    lpwl.write(
-        "\t".join(map(str, entries)).encode('utf-8'))
-    lpwl.write(b"\n")
+def to_lingpy(wordlist, replace_tab=" ", replace_newline=" "):
+    """Write a CLDF wordlist in LingPy format.
+
+    Write all rows from a CLDF wordlist to a LingPy-readable file. The LingPy
+    file parser is extremely naïve and cannot understand quoted cells, so every
+    "\\t" (field separator) and "\\n" (row separator) inside the wordlist cells
+    will be replaced by `replace_tab` and `replace_newline` respectively.
+
+    NOTE: Currently, this function can only convert the following properties,
+    naming the columns as follows: id→REFERENCE, languageReference→DOCULECT,
+    parameterReference→CONCEPT, soundSequence→TOKENS.
+
+    The ID values of the original wordlist will be stored in a REFERENCE column
+    for LingPy, because LingPy expects its IDs to be subsequent integers.
+
+    Parameters
+    ----------
+    wordlist : Wordlist
+        The CLDF wordlist to be converted
+    replace_tab : str
+        String to replace tabs inside cells with (Default value = " ")
+    replace_newline : str
+        String to replace newlines inside cells with (Default value = " ")
+
+    Returns
+    -------
+    tempfile.NamedTemporaryFile
+        A named temporary file containing the LingPy-formatted wordlist
+    """
+    lpwl = tempfile.NamedTemporaryFile()
+
+    def lingpy_write(entries):
+        lpwl.write(b"\t".join([
+            str(entry).replace("\t", replace_tab
+            ).replace("\n", replace_newline
+            ).encode('utf-8')
+            for entry in entries]))
+        lpwl.write(b"\n")
+
+    lingpy_write(["ID", "REFERENCE", "DOCULECT", "CONCEPT", "TOKENS"])
+    reference = wordlist[("FormTable", "id")].name
+    doculect = wordlist[("FormTable", "languageReference")].name
+    concept = wordlist[("FormTable", "parameterReference")].name
+    tokens = wordlist[("FormTable", "soundSequence")].name
+    for r, row in enumerate(
+            wordlist[wordlist.primary_table].iterdicts()):
+        if not row[tokens]:
+            continue
+        lingpy_row = [
+            r, row[reference], row[doculect], row[concept], ' '.join(row[tokens])
+        ]
+        lingpy_write(lingpy_row)
+    return lpwl
 
 
-parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-parser.add_argument("wordlist", type=_get_dataset, default=None, nargs="?")
-"""Write a CognatesTable. In later programming, deal with TableSet
-descriptions/overwriting data/existing codes etc., but first try to get the
-basics done."""
-args = parser.parse_args([])
+def cognatetable_from_lingpy(lingpy, column="cogid"):
+    """Generate a CLDF cognate table of data read from LingPy
 
-if args.wordlist is None:
-    try:
-        wordlist = get_dataset("Wordlist-metadata.json")
-    except ParserError:
-        wordlist = get_dataset("forms.csv")
-else:
-    wordlist = args.wordlist
+    Parameters
+    ----------
+    lingpy : lingpy.LexStat
+        The LingPy object containing cognate codes
 
-lpwl = tempfile.NamedTemporaryFile()
+    column : str
+        The name of the LingPy column containing the cognate classes (Default
+        value = "cogid")
 
-lingpy_write(["ID", "REFERENCE", "DOCULECT", "CONCEPT", "TOKENS"])
-reference = wordlist[("FormTable", "id")].name
-doculect = wordlist[("FormTable", "languageReference")].name
-concept = wordlist[("FormTable", "parameterReference")].name
-tokens = wordlist[("FormTable", "soundSequence")].name
-for r, row in enumerate(
-        wordlist[wordlist.primary_table].iterdicts()):
-    if not row[tokens]:
-        continue
-    lingpy_row = [
-        r, row[reference], row[doculect], row[concept], ' '.join(row[tokens])
-    ]
-    lingpy_write(lingpy_row)
+    Returns
+    -------
+    cognates : [{`column`: `value`}]
+        A list of rows, which can be written to a standard CLDF CognateTable
 
-wordlist.add_component("CognateTable")
-cognate_table = wordlist["CognateTable"]
+    """
+    cognates = []
+    for r, row in enumerate(lexstat._data.values()):
+        row = {k: row[v] for k, v in lexstat.header.items()}
+        cognates.append({
+            "ID": r,
+            "Form_ID": row["reference"],
+            "Cognateset_ID": row[column],
+            "Source": ["LexStat"]})
+    return cognates
 
-lpwl.seek(0, 0)
 
-lexstat = LexStat(lpwl.name)
-lexstat.cluster(method="sca", cluster_method="upgma")
-lexstat.cluster(method="lexstat", cluster_method="upgma")
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0] + """
 
-cognates = []
-for r, row in enumerate(lexstat._data.values()):
-    row = {k: row[v] for k, v in lexstat.header.items()}
-    cognates.append({
-        "ID": r,
-        "Form_ID": row["reference"],
-        "Cognateset_ID": row["scaid"],
-        "Cognateset_source": ["LexStat"]})
-cognate_table.write(cognates)
+    Generate a CognatesTable, using LingPy's LexStat algorithm.
 
-lpwl.close()
+    TODO: Expose more cluster() arguments; deal with TableSet
+    descriptions/overwriting data/existing codes etc.""")
+    parser.add_argument("wordlist", type=get_dataset, default=None, nargs="?")
+    parser.add_argument(
+        "--method", choices={'sca', 'lexstat', 'edit-dist', 'turchin'}, default="sca",
+        help="The method that shall be used for the calculation of distances")
+    parser.add_argument(
+        "--cluster-method", choices={'upgma', 'single', 'complete', 'mcl', 'infomap'},
+        default='upgma',
+        help="The method used to identify clusters")
+    args = parser.parse_args()
+
+    if args.wordlist is None:
+        try:
+            wordlist = get_dataset("Wordlist-metadata.json")
+        except FileNotFoundError:
+            wordlist = get_dataset("forms.csv")
+    else:
+        wordlist = args.wordlist
+
+    lpwl = to_lingpy(wordlist)
+    lpwl.seek(0, 0)
+
+    lexstat = LexStat(lpwl.name)
+    lpwl.close()
+    if args.method != 'sca':
+        lexstat.get_scorer(preprocessing=False, runs=10000, ratio=(2,1), vscale=1.0)
+    lexstat.cluster(method=args.method, cluster_method=args.cluster_method, ref="cogid")
+    # lexstat.cluster(method="sca", cluster_method="upgma")
+
+    wordlist.add_component("CognateTable")
+    cognate_table = wordlist["CognateTable"]
+    cognate_table.write(cognatetable_from_lingpy(lexstat))
+
