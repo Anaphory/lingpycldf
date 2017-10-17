@@ -141,6 +141,9 @@ if __name__ == '__main__':
         "--cluster-method", choices={'upgma', 'single', 'complete', 'mcl', 'infomap'},
         default='upgma',
         help="The method used to identify clusters")
+    parser.add_argument(
+        "--replace", action="store_true", default=False,
+        help="Replace an existing CognateTable if one exists.")
     args = parser.parse_args()
 
     # Load the word list into a LingPy compatible format
@@ -151,6 +154,14 @@ if __name__ == '__main__':
             wordlist = get_dataset("forms.csv")
     else:
         wordlist = args.wordlist
+    try:
+        wordlist.add_component("CognateTable")
+    except ValueError:
+        if args.replace:
+            pass
+        else:
+            print("DataSet already has a CognateTable. To drop existing cognate data, use `--replace`.")
+            sys.exit(2)
     lpwl = to_lingpy(wordlist)
 
     # Use LingPy functionality
@@ -162,7 +173,6 @@ if __name__ == '__main__':
     lexstat.align(model="sca")
 
     # Create new CognateTable and write it to there
-    wordlist.add_component("CognateTable")
     cognate_table = wordlist["CognateTable"]
     cognate_table.write(cognatetable_from_lingpy(lexstat))
 
