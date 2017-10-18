@@ -80,7 +80,7 @@ def to_lingpy(wordlist, replace_tab=" ", replace_newline=" "):
             else entry
             for entry in entries]
 
-    lingpy_write(["ID", "REFERENCE", "DOCULECT", "CONCEPT", "TOKENS"])
+    lingpy_write(["ID", "REFERENCE", "DOCULECT", "CONCEPT", "IPA", "TOKENS"])
     reference = wordlist[("FormTable", "id")].name
     doculect = wordlist[("FormTable", "languageReference")].name
     concept = wordlist[("FormTable", "parameterReference")].name
@@ -90,7 +90,7 @@ def to_lingpy(wordlist, replace_tab=" ", replace_newline=" "):
         if not row[tokens]:
             continue
         lingpy_row = [
-            r, row[reference], row[doculect], row[concept], ' '.join(row[tokens])
+            r, row[reference], row[doculect], row[concept], ''.join(row[tokens]), ' '.join(row[tokens])
         ]
         lingpy_write(lingpy_row)
     return lpwl
@@ -131,8 +131,8 @@ if __name__ == '__main__':
 
     Generate a CognatesTable, using LingPy's LexStat algorithm.
 
-    TODO: Expose more cluster() arguments; deal with TableSet
-    descriptions/overwriting data/existing codes etc.""")
+    TODO: Expose more cluster() arguments; deal with TableSet descriptions;
+    test""")
     parser.add_argument("wordlist", type=get_dataset, default=None, nargs="?")
     parser.add_argument(
         "--method", choices={'sca', 'lexstat', 'edit-dist', 'turchin'}, default="sca",
@@ -142,8 +142,8 @@ if __name__ == '__main__':
         default='upgma',
         help="The method used to identify clusters")
     parser.add_argument(
-        "--replace", action="store_true", default=False,
-        help="Replace an existing CognateTable if one exists.")
+        "--overwrite", action="store_true", default=False,
+        help="Overwrite an existing CognateTable if one exists.")
     args = parser.parse_args()
 
     # Load the word list into a LingPy compatible format
@@ -157,20 +157,26 @@ if __name__ == '__main__':
     try:
         wordlist.add_component("CognateTable")
     except ValueError:
-        if args.replace:
+        if args.overwrite:
             pass
         else:
-            print("DataSet already has a CognateTable. To drop existing cognate data, use `--replace`.")
+            print("DataSet already has a CognateTable. To drop existing cognate data, use `--overwrite`.")
             sys.exit(2)
     lpwl = to_lingpy(wordlist)
 
+    with open("printed_dictionary.tsv", "w") as data:
+        for i in range(len(lpwl)):
+            print(*lpwl[i], file=data, sep="\t")
+
     # Use LingPy functionality
-    lexstat = LexStat(lpwl)
+    lexstat = LexStat(lpwl, check=True)
+    lwpl.output("tsv", filename="lexstat_writeback.tsv")
     if args.method != 'sca':
         lexstat.get_scorer(preprocessing=False, runs=10000, ratio=(2,1), vscale=1.0)
     lexstat.cluster(method=args.method, cluster_method=args.cluster_method, ref="cogid")
-    lexstat = Alignments(lexstat)
+    lexstat = Alignments(lexstat, segments="tokens")
     lexstat.align(model="sca")
+    lwpl.output("tsv", filename="with_lexstat_and_alignment.tsv")
 
     # Create new CognateTable and write it to there
     cognate_table = wordlist["CognateTable"]
