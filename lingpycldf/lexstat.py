@@ -132,11 +132,11 @@ def cognatetable_from_lingpy(lingpy, column="cogid"):
 def find_bad_tokens(wordlist):
     """Collect which bad symbols appear in which forms."""
     bad_tokens = {}
-    for k, segments in wordlist.iter_rows('tokens'):
+    for k, segments, form_id in wordlist.iter_rows('tokens', "reference"):
         classes = lingpy.tokens2class(segments, 'dolgo')
         for token, cls in zip(segments, classes):
             if cls == "0":
-                bad_tokens.setdefault(token, []).append(k)
+                bad_tokens.setdefault(token, []).append(form_id)
     return bad_tokens
 
 if __name__ == '__main__':
@@ -195,7 +195,7 @@ if __name__ == '__main__':
                     threshold=args.threshold)
     lexstat = Alignments(lexstat, segments="tokens")
     lexstat.align(model="sca")
-    lexstat.output("tsv", filename="with_lexstat_and_alignment.tsv")
+    lexstat.output("tsv", filename="with_lexstat_and_alignment")
 
     # Create new CognateTable and write it to there
     cognate_table = wordlist["CognateTable"]
