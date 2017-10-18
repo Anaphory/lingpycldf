@@ -8,6 +8,8 @@ import pycldf
 from pycldf.util import Path
 from pycldf.dataset import Dataset
 from pycldf.cli import _get_dataset
+
+import lingpy
 from lingpy.align.sca import Alignments
 from lingpy.compare.lexstat import LexStat
 
@@ -80,7 +82,7 @@ def to_lingpy(wordlist, replace_tab=" ", replace_newline=" "):
             else entry
             for entry in entries]
 
-    lingpy_write(["REFERENCE", "DOCULECT", "CONCEPT", "IPA", "TOKENS"])
+    lingpy_write(["ID", "REFERENCE", "DOCULECT", "CONCEPT", "IPA", "TOKENS"])
     reference = wordlist[("FormTable", "id")].name
     doculect = wordlist[("FormTable", "languageReference")].name
     concept = wordlist[("FormTable", "parameterReference")].name
@@ -90,9 +92,11 @@ def to_lingpy(wordlist, replace_tab=" ", replace_newline=" "):
         if not row[tokens]:
             continue
         lingpy_row = [
-            row[reference], row[doculect], row[concept], ''.join(row[tokens]), ' '.join(x for x in row[tokens] if x not in "(,_.-;)")
+            r+1, row[reference], row[doculect], row[concept], ''.join(row[tokens]), ' '.join(x for x in row[tokens] if x not in "(,_.-;)")
         ]
         lingpy_write(lingpy_row)
+        if r >= 20:
+            break
     return lpwl
 
 
@@ -164,13 +168,21 @@ if __name__ == '__main__':
             sys.exit(2)
     lpwl = to_lingpy(wordlist)
 
+    print("Dictionary form:", lpwl)
     with open("printed_dictionary.tsv", "w") as data:
         for i in range(len(lpwl)):
             print(i or "ID", *lpwl[i], file=data, sep="\t")
 
+    # Check bad symbols in forms
+    wl = lingpy.Wordlist(lpwl)
+    for k, segments in wl.iter_rows('tokens'):
+        cls = lingpy.tokens2class(segments, 'dolgo')
+        if '0' in cls:
+            print(cls, k, ';'.join(segments))
+
     # Use LingPy functionality
     lexstat = LexStat(lpwl, check=True, segments="tokens")
-    lpwl.output("tsv", filename="lexstat_writeback.tsv")
+    lexstat.output("tsv", filename="lexstat_writeback.tsv")
     if args.method != 'sca':
         lexstat.get_scorer(preprocessing=False, runs=10000, ratio=(2,1), vscale=1.0)
     lexstat.cluster(method=args.method, cluster_method=args.cluster_method, ref="cogid")
