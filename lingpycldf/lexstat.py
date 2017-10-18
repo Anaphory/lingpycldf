@@ -8,6 +8,8 @@ import pycldf
 from pycldf.util import Path
 from pycldf.dataset import Dataset
 from pycldf.cli import _get_dataset
+
+import lingpy
 from lingpy.align.sca import Alignments
 from lingpy.compare.lexstat import LexStat
 
@@ -80,7 +82,7 @@ def to_lingpy(wordlist, replace_tab=" ", replace_newline=" "):
             else entry
             for entry in entries]
 
-    lingpy_write(["ID", "REFERENCE", "DOCULECT", "CONCEPT", "TOKENS"])
+    lingpy_write(["ID", "REFERENCE", "DOCULECT", "CONCEPT", "IPA", "TOKENS"])
     reference = wordlist[("FormTable", "id")].name
     doculect = wordlist[("FormTable", "languageReference")].name
     concept = wordlist[("FormTable", "parameterReference")].name
@@ -90,7 +92,7 @@ def to_lingpy(wordlist, replace_tab=" ", replace_newline=" "):
         if not row[tokens]:
             continue
         lingpy_row = [
-            r, row[reference], row[doculect], row[concept], ' '.join(row[tokens])
+            r+1, row[reference], row[doculect], row[concept], ''.join(row[tokens]), [x for x in row[tokens] if x not in "(,_.-;)"]
         ]
         lingpy_write(lingpy_row)
     return lpwl
@@ -131,8 +133,8 @@ if __name__ == '__main__':
 
     Generate a CognatesTable, using LingPy's LexStat algorithm.
 
-    TODO: Expose more cluster() arguments; deal with TableSet
-    descriptions/overwriting data/existing codes etc.""")
+    TODO: Expose more cluster() arguments; deal with TableSet descriptions;
+    test""")
     parser.add_argument("wordlist", type=get_dataset, default=None, nargs="?")
     parser.add_argument(
         "--method", choices={'sca', 'lexstat', 'edit-dist', 'turchin'}, default="sca",
@@ -144,6 +146,9 @@ if __name__ == '__main__':
     parser.add_argument(
         "--threshold", type=float, default=False,
         help="Use this threshold for the cluster algorithm")
+    parser.add_argument(
+        "--overwrite", action="store_true", default=False,
+        help="Overwrite an existing CognateTable if one exists.")
     args = parser.parse_args()
 
     # Load the word list into a LingPy compatible format
@@ -154,19 +159,40 @@ if __name__ == '__main__':
             wordlist = get_dataset("forms.csv")
     else:
         wordlist = args.wordlist
+    try:
+        wordlist.add_component("CognateTable")
+    except ValueError:
+        if args.overwrite:
+            pass
+        else:
+            print("DataSet already has a CognateTable. To drop existing cognate data, use `--overwrite`.")
+            sys.exit(2)
     lpwl = to_lingpy(wordlist)
 
+    print("Dictionary form:", lpwl)
+    with open("printed_dictionary.tsv", "w") as data:
+        for i in range(len(lpwl)):
+            print(i or "ID", *lpwl[i], file=data, sep="\t")
+
+    # Check bad symbols in forms
+    wl = lingpy.Wordlist(lpwl)
+    for k, segments in wl.iter_rows('tokens'):
+        cls = lingpy.tokens2class(segments, 'dolgo')
+        if '0' in cls:
+            print(cls, k, ';'.join(segments))
+
     # Use LingPy functionality
-    lexstat = LexStat(lpwl)
+    lexstat = LexStat(lpwl, check=True, segments="tokens")
+    lexstat.output("tsv", filename="lexstat_writeback.tsv")
     if args.method != 'sca':
         lexstat.get_scorer(preprocessing=False, runs=10000, ratio=(2,1), vscale=1.0)
     lexstat.cluster(method=args.method, cluster_method=args.cluster_method, ref="cogid",
                     threshold=args.threshold)
-    lexstat = Alignments(lexstat)
+    lexstat = Alignments(lexstat, segments="tokens")
     lexstat.align(model="sca")
+    lexstat.output("tsv", filename="with_lexstat_and_alignment.tsv")
 
     # Create new CognateTable and write it to there
-    wordlist.add_component("CognateTable")
     cognate_table = wordlist["CognateTable"]
     cognate_table.write(cognatetable_from_lingpy(lexstat))
 
