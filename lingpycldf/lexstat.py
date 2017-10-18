@@ -80,7 +80,7 @@ def to_lingpy(wordlist, replace_tab=" ", replace_newline=" "):
             else entry
             for entry in entries]
 
-    lingpy_write(["ID", "REFERENCE", "DOCULECT", "CONCEPT", "IPA", "TOKENS"])
+    lingpy_write(["REFERENCE", "DOCULECT", "CONCEPT", "IPA", "TOKENS"])
     reference = wordlist[("FormTable", "id")].name
     doculect = wordlist[("FormTable", "languageReference")].name
     concept = wordlist[("FormTable", "parameterReference")].name
@@ -90,7 +90,7 @@ def to_lingpy(wordlist, replace_tab=" ", replace_newline=" "):
         if not row[tokens]:
             continue
         lingpy_row = [
-            r, row[reference], row[doculect], row[concept], ''.join(row[tokens]), ' '.join(row[tokens])
+            row[reference], row[doculect], row[concept], ''.join(row[tokens]), ' '.join(x for x in row[tokens] if x not in "(,_.-;)")
         ]
         lingpy_write(lingpy_row)
     return lpwl
@@ -166,17 +166,17 @@ if __name__ == '__main__':
 
     with open("printed_dictionary.tsv", "w") as data:
         for i in range(len(lpwl)):
-            print(*lpwl[i], file=data, sep="\t")
+            print(i or "ID", *lpwl[i], file=data, sep="\t")
 
     # Use LingPy functionality
-    lexstat = LexStat(lpwl, check=True)
-    lwpl.output("tsv", filename="lexstat_writeback.tsv")
+    lexstat = LexStat(lpwl, check=True, segments="tokens")
+    lpwl.output("tsv", filename="lexstat_writeback.tsv")
     if args.method != 'sca':
         lexstat.get_scorer(preprocessing=False, runs=10000, ratio=(2,1), vscale=1.0)
     lexstat.cluster(method=args.method, cluster_method=args.cluster_method, ref="cogid")
     lexstat = Alignments(lexstat, segments="tokens")
     lexstat.align(model="sca")
-    lwpl.output("tsv", filename="with_lexstat_and_alignment.tsv")
+    lexstat.output("tsv", filename="with_lexstat_and_alignment.tsv")
 
     # Create new CognateTable and write it to there
     cognate_table = wordlist["CognateTable"]
