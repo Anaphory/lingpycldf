@@ -141,6 +141,9 @@ if __name__ == '__main__':
         "--cluster-method", choices={'upgma', 'single', 'complete', 'mcl', 'infomap'},
         default='upgma',
         help="The method used to identify clusters")
+    parser.add_argument(
+        "--threshold", type=float, default=False,
+        help="Use this threshold for the cluster algorithm")
     args = parser.parse_args()
 
     # Load the word list into a LingPy compatible format
@@ -157,7 +160,8 @@ if __name__ == '__main__':
     lexstat = LexStat(lpwl)
     if args.method != 'sca':
         lexstat.get_scorer(preprocessing=False, runs=10000, ratio=(2,1), vscale=1.0)
-    lexstat.cluster(method=args.method, cluster_method=args.cluster_method, ref="cogid")
+    lexstat.cluster(method=args.method, cluster_method=args.cluster_method, ref="cogid",
+                    threshold=args.threshold)
     lexstat = Alignments(lexstat)
     lexstat.align(model="sca")
 
