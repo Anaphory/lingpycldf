@@ -2,6 +2,8 @@
 
 """Analyze pycldf word list using lingpy"""
 
+import json
+
 import argparse
 
 import pycldf
@@ -127,6 +129,15 @@ def cognatetable_from_lingpy(lingpy, column="cogid"):
             "Source": ["LexStat"]})
     return cognates
 
+def find_bad_tokens(wordlist):
+    """Collect which bad symbols appear in which forms."""
+    bad_tokens = {}
+    for k, segments in wordlist.iter_rows('tokens'):
+        classes = lingpy.tokens2class(segments, 'dolgo')
+        for token, cls in zip(segments, classes):
+            if cls == "0":
+                bad_tokens.setdefault(token, []).append(k)
+    return bad_tokens
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0] + """
@@ -149,6 +160,9 @@ if __name__ == '__main__':
     parser.add_argument(
         "--overwrite", action="store_true", default=False,
         help="Overwrite an existing CognateTable if one exists.")
+    parser.add_argument(
+        "--bad-tokens-log", type=argparse.FileType("w"), default=None,
+        help="File to write a list of bad tokens to")
     args = parser.parse_args()
 
     # Load the word list into a LingPy compatible format
@@ -169,21 +183,12 @@ if __name__ == '__main__':
             sys.exit(2)
     lpwl = to_lingpy(wordlist)
 
-    print("Dictionary form:", lpwl)
-    with open("printed_dictionary.tsv", "w") as data:
-        for i in range(len(lpwl)):
-            print(i or "ID", *lpwl[i], file=data, sep="\t")
-
-    # Check bad symbols in forms
-    wl = lingpy.Wordlist(lpwl)
-    for k, segments in wl.iter_rows('tokens'):
-        cls = lingpy.tokens2class(segments, 'dolgo')
-        if '0' in cls:
-            print(cls, k, ';'.join(segments))
-
     # Use LingPy functionality
-    lexstat = LexStat(lpwl, check=True, segments="tokens")
-    lexstat.output("tsv", filename="lexstat_writeback.tsv")
+    lexstat = LexStat(lpwl, check=False, segments="tokens")
+    if args.bad_tokens_log:
+        json.dump(find_bad_tokens(lexstat), args.bad_tokens_log)
+
+    # Prepare analysis
     if args.method != 'sca':
         lexstat.get_scorer(preprocessing=False, runs=10000, ratio=(2,1), vscale=1.0)
     lexstat.cluster(method=args.method, cluster_method=args.cluster_method, ref="cogid",
