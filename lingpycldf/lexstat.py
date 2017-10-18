@@ -92,11 +92,9 @@ def to_lingpy(wordlist, replace_tab=" ", replace_newline=" "):
         if not row[tokens]:
             continue
         lingpy_row = [
-            r+1, row[reference], row[doculect], row[concept], ''.join(row[tokens]), ' '.join(x for x in row[tokens] if x not in "(,_.-;)")
+            r+1, row[reference], row[doculect], row[concept], ''.join(row[tokens]), [x for x in row[tokens] if x not in "(,_.-;)"]
         ]
         lingpy_write(lingpy_row)
-        if r >= 20:
-            break
     return lpwl
 
 
